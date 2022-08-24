@@ -1,0 +1,202 @@
+---
+title: "Opioid Crisis Analysis"
+author: "Jess Spayd"
+date: "Fall 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(tidyverse)
+library(stargazer)
+library(sandwich)
+library(lmtest)
+
+setwd("~/Documents/programming/GitHub/opioid-crisis/NSDUH-2019")
+load("~/Documents/programming/GitHub/opioid-crisis/NSDUH-2019/NSDUH_2019.RData")
+NSDUH_2019 <- PUF2019_100920
+NSDUH_2019 <- select(NSDUH_2019, herever, pnranyflag, AGE2, service, 
+                     irsex, IREDUHIGHST2, NEWRACE2, income, COUTYP4)
+
+#### CLEAN VARIABLES
+
+## ever used heroin
+NSDUH_2019$herever <- recode(NSDUH_2019$herever, "1" = 1, "2" = 0)
+NSDUH_2019 <- subset(NSDUH_2019, !is.na(NSDUH_2019$herever))
+
+## service
+NSDUH_2019$service <- recode(NSDUH_2019$service, "1" = 1, "2" = 0)
+NSDUH_2019 <- subset(NSDUH_2019, !is.na(NSDUH_2019$service))
+
+## sex
+NSDUH_2019$irsex <- factor(NSDUH_2019$irsex)
+
+## race/ethnicity
+NSDUH_2019$NEWRACE2 <- factor(NSDUH_2019$NEWRACE2)
+
+```
+
+
+## Background
+
+### Research Question: What is the relationship between use of prescription pain relievers and heroin use?
+
+The opioid epidemic in the United States costs many human lives and even more money spent on drug treatment and incarceration by the government and its taxpayers. Heroin is an illicit substance and its abuse can be deadly. Prescription pain relievers are opioids as well, and some medical patients become addicted to and develop a tolerance of these prescription medications after having them prescribed. It seems plausible that those individuals may turn to heroin to feed their addiction, since it is cheaper, more potent, and more easily obtained than prescription narcotics. I hypothesize that those who have used prescription pain relievers will be more likely to have used heroin. It is useful to determine the relationship, if any, between heroin use and use of prescription painkillers to inform policy that will effectively address the opioid epidemic, perhaps by regulating painkiller prescribing practices or employing prevention strategies for those who are prescribed painkillers.
+
+### Dataset: 
+
+Center for Behavioral Health Statistics and Quality, Substance Abuse and Mental Health Services Administration, & RTI International. (2020). 2019 National Survey on Drug Use and Health (NSDUH): Public use file [data file and codebook]. Rockville, MD: Substance Abuse and Mental Health Data Archive [distributor]. Retrieved 10/19/2021 from [SAMHSA.gov](https://www.datafiles.samhsa.gov/dataset/national-survey-drug-use-and-health-2019-nsduh-2019-ds0001)
+
+
+## Heroin Use
+
+```{r echo=FALSE}
+
+## dependent variable: ever used heroin (herever)
+
+herever_table <- table(NSDUH_2019$herever)
+barplot(herever_table, main = 'Responses to "Have you ever, even once, used heroin?"',
+        xlab = "Response",
+        ylim = c(0, 47500),
+        names.arg = c("No", "Yes"))
+text(x = .7, y = 45500, sum(NSDUH_2019$herever == 0), col = "black")
+text(x = 1.9, y = 2500, sum(NSDUH_2019$herever == 1), col = "black")
+
+```
+
+With a large sample size of nearly 45,000 respondents, only a small fraction (about 2%) reported ever using heroin.
+
+## Prescription Pain Reliever Use
+
+```{r echo=FALSE}
+
+## independent variable: ever used prescription pain relievers
+
+pnranyflag_table <- table(NSDUH_2019$pnranyflag)
+barplot(pnranyflag_table, main = 'Respondent Use of Prescription Pain Relievers',
+        xlab = "Response",
+        ylim = c(0, 30000),
+        names.arg = c("Never used", "Used at least once"))
+text(x = .7, y = 20000, sum(NSDUH_2019$pnranyflag == 0), col = "black")
+text(x = 1.9, y = 27000, sum(NSDUH_2019$pnranyflag == 1), col = "black")
+
+```
+
+More than half (nearly 58%) of respondents had used (as directed or misused) prescription pain relievers.
+
+## What does the relationship look like?
+
+```{r echo=FALSE}
+
+ggplot(NSDUH_2019, aes(x = jitter(pnranyflag), y = jitter(herever))) +
+  geom_point(alpha=0.5) +
+  #stat_smooth(method="lm")
+  labs(x = "Prescription Pain Reliever Use", y = "Heroin Use")+
+  scale_y_continuous(breaks=c(0,1), 
+                     labels=c("Never used heroin", 
+                              "Used heroin at least once"))+
+  scale_x_continuous(breaks=c(0,1),
+                     labels=c("Never used Rx pain relievers", 
+                              "Used Rx pain relievers at least once"))+
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_blank())
+
+
+```
+
+Although the vast majority of respondents never used heroin, regardless of painkiller use, more of those who had used heroin had also used prescription pain relievers.
+
+
+## Regression Analysis
+
+```{r echo=FALSE, results='asis', warning=FALSE}
+
+## bivariate regression
+
+lin_reg <- lm(herever*100 ~ pnranyflag, data = NSDUH_2019)
+lin_reg$rse <- sqrt(diag(vcovHC(lin_reg, type="HC1")))
+
+## multivariate regression
+
+# sex indicator variables
+
+NSDUH_2019$male <- ifelse(NSDUH_2019$irsex == "1", 1, 0)
+NSDUH_2019$female <- ifelse(NSDUH_2019$irsex == "2", 1, 0)
+
+# race/ethnicity indicator variables
+
+NSDUH_2019$white <- ifelse(NSDUH_2019$NEWRACE2 == "1", 1, 0)
+NSDUH_2019$black <- ifelse(NSDUH_2019$NEWRACE2 == "2", 1, 0)
+NSDUH_2019$native <- ifelse(NSDUH_2019$NEWRACE2 == "3", 1, 0)
+NSDUH_2019$pacisl <- ifelse(NSDUH_2019$NEWRACE2 == "4", 1, 0)
+NSDUH_2019$asian <- ifelse(NSDUH_2019$NEWRACE2 == "5", 1, 0)
+NSDUH_2019$multi <- ifelse(NSDUH_2019$NEWRACE2 == "6", 1, 0)
+NSDUH_2019$hispanic <- ifelse(NSDUH_2019$NEWRACE2 == "7", 1, 0)
+
+mul_reg <- lm(herever*100 ~ pnranyflag + female + AGE2 +  
+             black + native + pacisl + asian + multi + hispanic +
+             service + IREDUHIGHST2 + income + COUTYP4, 
+           data = NSDUH_2019)
+mul_reg$rse <- sqrt(diag(vcovHC(mul_reg, type="HC1")))
+
+stargazer(lin_reg, mul_reg,
+          type = "html", 
+          se=list(lin_reg$rse, mul_reg$rse), 
+          title = "Regression Models", 
+          column.labels = c("(Bivariate)", "(Multivariate)"),
+          single.row = TRUE,
+          covariate.labels = c("Pain reliever use", 
+                               "Gender: Female", 
+                               "Age",
+                               "Race/Ethnicity: Black",
+                               "Race/Ethnicity: Native",
+                               "Race/Ethnicity: Pacific Islander",
+                               "Race/Ethnicity: Asian",
+                               "Race/Ethnicity: Multiracial",
+                               "Race/Ethnicity: Hispanic",
+                               "Military service",
+                               "Education level",
+                               "Household income",
+                               "Rural-Urban scale"),
+          dep.var.labels = "Heroin use",
+          model.numbers=FALSE,
+          notes.append=FALSE,
+          notes = c("<sup>&sstarf;</sup>p<0.1; <sup>&sstarf;&sstarf;</sup>p<0.05; <sup>&sstarf;&sstarf;&sstarf;</sup>p<0.01"))
+
+```
+
+
+### Interpretation of coefficients
+
+- Bivariate model: Going from never using prescription pain relievers to using them is associated with a 2.81% increase in the likelihood of using heroin.
+
+- Multivariate model: Going from never using prescription pain relievers to using them is associated with a 2.76% increase in the likelihood of using heroin while holding constant sex, age, race/ethnicity, military service, education level, family income, and rurality-urbanity.
+
+## Hypothesis Testing
+
+```{r include=FALSE}
+
+rx_users <- NSDUH_2019[NSDUH_2019$pnranyflag == 1,]
+never_used_rx <- NSDUH_2019[NSDUH_2019$pnranyflag == 0,]
+
+t.test(rx_users$herever, never_used_rx$herever)
+
+```
+
+- H<sub>0</sub>: People who have used and have never used prescription pain relievers are equally likely to have used heroin.
+
+- H<sub>A</sub>: People who have used prescription pain relievers are more likely to have used heroin.
+
+- t-score: 22.74
+
+We can reject the null hypothesis at the 1% significance level.
+
+## Conclusion
+
+My analysis suggests that there is at least a small relationship between prescription pain reliever use and heroin use, particularly when controlling for demographic characteristics. Those who have used prescription pain relievers are about 2.5-3% more likely to have used heroin as well, compared to those who have never used prescription pain relievers.
+
+To continue studying the relationship between prescription pain reliever and heroin use, I would be interested in conducting a longitudinal study of those who are prescribed pain relievers to determine if they later became addicted to opioids and/or started using heroin. This would provide richer data about the circumstances that could lead from prescription pain reliever use to heroin use. Otherwise, utilizing the present NSDUH survey methods, it might be helpful to collect data to determine the timeline of pain reliever use and heroin use, to establish a stronger case for a causal relationship. (The present data does not establish whether an individual who used both prescription pain relievers and heroin did so in that order.) Furthermore, it would be beneficial to collect continuous data for some of the control variables used in my analysis, rather than categorical data, such as age and income. These steps would allow for a deeper and more meaningful analysis of the relationship between prescription pain relievers and heroin use that could more effectively inform medical policy to prevent opioid abuse, addiction, and overdose.
+
+
+
+
